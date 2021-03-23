@@ -1,6 +1,6 @@
-import 'source-map-support/register'
+import "source-map-support/register"
 
-import { IPoint } from 'influx'
+import { Point } from "@influxdata/influxdb-client"
 import {
   Counter,
   DefaultClusterOptions,
@@ -20,8 +20,8 @@ import {
   ScheduledMetricReporter,
   ScheduledMetricReporterOptions,
   StdClock,
-  Timer
-} from 'inspector-metrics'
+  Timer,
+} from "inspector-metrics"
 
 /**
  * Sender interface for influxdb client abstraction.
@@ -30,7 +30,6 @@ import {
  * @interface Sender
  */
 export interface Sender {
-
   /**
    * Indicates if the sender is ready to send data.
    *
@@ -50,12 +49,11 @@ export interface Sender {
   /**
    * Sends the given data points to influxdb.
    *
-   * @param {IPoint[]} points
-   * @returns {Promise<any>}
+   * @param {Point[]} points
+   * @returns {Promise<void>}
    * @memberof Sender
    */
-  send(points: IPoint[]): Promise<void>
-
+  send(points: Point[]): Promise<void>
 }
 
 /**
@@ -65,7 +63,8 @@ export interface Sender {
  * @interface InfluxMetricReporterOptions
  * @extends {ScheduledMetricReporterOptions}
  */
-export interface InfluxMetricReporterOptions extends ScheduledMetricReporterOptions {
+export interface InfluxMetricReporterOptions
+  extends ScheduledMetricReporterOptions {
   /**
    * A logger instance used to report errors.
    *
@@ -89,7 +88,10 @@ export interface InfluxMetricReporterOptions extends ScheduledMetricReporterOpti
  * @class InfluxMetricReporter
  * @extends {ScheduledMetricReporter}
  */
-export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricReporterOptions, IPoint> {
+export class InfluxMetricReporter extends ScheduledMetricReporter<
+  InfluxMetricReporterOptions,
+  Point
+> {
   /**
    * Metadata for the logger.
    *
@@ -97,7 +99,7 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @type {*}
    * @memberof InfluxMetricReporter
    */
-  private readonly logMetadata: any;
+  private readonly logMetadata: any
 
   /**
    * Creates an instance of InfluxMetricReporter.
@@ -105,34 +107,39 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @param {string} [reporterType] the type of the reporter implementation - for internal use
    * @memberof InfluxMetricReporter
    */
-  public constructor ({
-    sender,
-    log = console,
-    reportInterval = 1000,
-    unit = MILLISECOND,
-    clock = new StdClock(),
-    scheduler = setInterval,
-    minReportingTimeout = 1,
-    clusterOptions = new DefaultClusterOptions(),
-    tags = new Map()
-  }: InfluxMetricReporterOptions,
-  reporterType?: string) {
-    super({
-      clock,
-      clusterOptions,
-      log,
-      minReportingTimeout,
-      reportInterval,
-      scheduler,
+  public constructor(
+    {
       sender,
-      tags,
-      unit
-    }, reporterType)
+      log = console,
+      reportInterval = 1000,
+      unit = MILLISECOND,
+      clock = new StdClock(),
+      scheduler = setInterval,
+      minReportingTimeout = 1,
+      clusterOptions = new DefaultClusterOptions(),
+      tags = new Map(),
+    }: InfluxMetricReporterOptions,
+    reporterType?: string
+  ) {
+    super(
+      {
+        clock,
+        clusterOptions,
+        log,
+        minReportingTimeout,
+        reportInterval,
+        scheduler,
+        sender,
+        tags,
+        unit,
+      },
+      reporterType
+    )
 
     this.logMetadata = {
       reportInterval,
       tags,
-      unit
+      unit,
     }
   }
 
@@ -142,7 +149,7 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @returns {Logger}
    * @memberof InfluxMetricReporter
    */
-  public getLog (): Logger {
+  public getLog(): Logger {
     return this.options.log
   }
 
@@ -152,7 +159,7 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @param {(Logger | null)} log
    * @memberof InfluxMetricReporter
    */
-  public setLog (log: Logger | null): void {
+  public setLog(log: Logger | null): void {
     this.options.log = log
   }
 
@@ -162,7 +169,7 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @returns {Promise<this>}
    * @memberof ScheduledMetricReporter
    */
-  public async start (): Promise<this> {
+  public async start(): Promise<this> {
     await this.options.sender.init()
     return await super.start()
   }
@@ -174,14 +181,18 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @returns {Promise<TEvent>}
    * @memberof InfluxMetricReporter
    */
-  public async reportEvent<TEventData, TEvent extends Event<TEventData>>(event: TEvent): Promise<TEvent> {
+  public async reportEvent<TEventData, TEvent extends Event<TEventData>>(
+    event: TEvent
+  ): Promise<TEvent> {
     if (!(await this.options.sender.isReady())) {
-      throw new Error("Sender is not ready. Wait for the 'start' method to complete.")
+      throw new Error(
+        "Sender is not ready. Wait for the 'start' method to complete."
+      )
     }
 
     const value = event.getValue()
     if (!value) {
-      return await Promise.reject(new Error('Invalid event value'))
+      return await Promise.reject(new Error("Invalid event value"))
     }
 
     const point = this.reportGauge(event, {
@@ -189,25 +200,30 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
       metrics: [],
       overallCtx: {},
       registry: null,
-      type: 'gauge'
+      type: "gauge",
     })
-    point.timestamp = event.getTime()
+    point.timestamp(event.getTime())
 
     try {
-      await this.handleResults({}, null, null, 'gauge', [{
-        metric: event,
-        result: point
-      }])
+      await this.handleResults({}, null, null, "gauge", [
+        {
+          metric: event,
+          result: point,
+        },
+      ])
 
       if (this.options.log) {
-        this.options.log.debug('wrote event', this.logMetadata)
+        this.options.log.debug("wrote event", this.logMetadata)
       }
       return event
     } catch (reason) {
       if (this.options.log) {
         const message = reason.message as string
-        this.options.log
-          .error(`error writing event - reason: ${message}`, reason, this.logMetadata)
+        this.options.log.error(
+          `error writing event - reason: ${message}`,
+          reason,
+          this.logMetadata
+        )
       }
       throw reason
     }
@@ -219,7 +235,7 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @protected
    * @memberof InfluxMetricReporter
    */
-  protected async report (): Promise<OverallReportContext> {
+  protected async report(): Promise<OverallReportContext> {
     const senderReady = await this.options.sender.isReady()
     if (senderReady) {
       return await super.report()
@@ -235,27 +251,28 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @param {MetricRegistry | null} registry
    * @param {Date} date
    * @param {MetricType} type
-   * @param {Array<ReportingResult<any, IPoint>>} results
+   * @param {Array<ReportingResult<any, Point>>} results
    * @returns {Promise<any>}
    * @memberof InfluxMetricReporter
    */
-  protected async handleResults (
+  protected async handleResults(
     ctx: OverallReportContext,
     registry: MetricRegistry | null,
     date: Date,
     type: MetricType,
-    results: Array<ReportingResult<any, IPoint>>): Promise<any> {
+    results: Array<ReportingResult<any, Point>>
+  ): Promise<any> {
     const points = results.map((result) => result.result)
     if (points.length === 0) {
       return
     }
 
     try {
-      points.forEach((point) => {
-        if (!(point.timestamp instanceof Date)) {
-          point.timestamp = new Date(point.timestamp)
-        }
-      })
+      // points.forEach((point) => {
+      //   if (!(point.timestamp instanceof Date)) {
+      //     point.timestamp(new Date(point.fields.timestamp))
+      //   }
+      // })
 
       await this.options.sender.send(points)
       if (this.options.log) {
@@ -264,24 +281,28 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
     } catch (reason) {
       if (this.options.log) {
         const message = reason.message as string
-        this.options.log
-          .error(`error writing ${type} metrics - reason: ${message}`, reason, this.logMetadata)
+        this.options.log.error(
+          `error writing ${type} metrics - reason: ${message}`,
+          reason,
+          this.logMetadata
+        )
       }
     }
   }
 
   /**
-   * Builds an IPoint instance for the given {@link Counter} or  {@link MonotoneCounter}.
+   * Builds a Point instance for the given {@link Counter} or  {@link MonotoneCounter}.
    *
    * @protected
    * @param {(MonotoneCounter | Counter)} counter
    * @param {(MetricSetReportContext<MonotoneCounter | Counter>)} ctx
-   * @returns {IPoint}
+   * @returns {Point}
    * @memberof InfluxMetricReporter
    */
-  protected reportCounter (
+  protected reportCounter(
     counter: MonotoneCounter | Counter,
-    ctx: MetricSetReportContext<MonotoneCounter | Counter>): IPoint {
+    ctx: MetricSetReportContext<MonotoneCounter | Counter>
+  ): Point {
     const value = counter.getCount()
     if (!value || isNaN(value)) {
       return null
@@ -292,24 +313,35 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
 
     fields[`${fieldNamePrefix}count`] = counter.getCount() || 0
 
-    return {
-      fields,
-      measurement,
-      tags: this.buildTags(ctx.registry, counter),
-      timestamp: ctx.date
-    }
+    // return {
+    //   fields,
+    //   measurement,
+    //   tags: this.buildTags(ctx.registry, counter),
+    //   timestamp: ctx.date
+    // }
+    const point = new Point(measurement)
+
+    point.timestamp(ctx.date).fields = fields
+    Object.entries(this.buildTags(ctx.registry, counter)).forEach(([k, v]) =>
+      point.tag(k, v)
+    )
+
+    return point
   }
 
   /**
-   * Builds an IPoint instance for the given {@link Gauge}.
+   * Builds a Point instance for the given {@link Gauge}.
    *
    * @protected
    * @param {Gauge<any>} gauge
    * @param {MetricSetReportContext<Gauge<any>>} ctx
-   * @returns {IPoint}
+   * @returns {Point}
    * @memberof InfluxMetricReporter
    */
-  protected reportGauge (gauge: Gauge<any>, ctx: MetricSetReportContext<Gauge<any>>): IPoint {
+  protected reportGauge(
+    gauge: Gauge<any>,
+    ctx: MetricSetReportContext<Gauge<any>>
+  ): Point {
     const value = gauge.getValue()
     if (!value || isNaN(value)) {
       return null
@@ -320,24 +352,35 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
 
     fields[`${fieldNamePrefix}value`] = gauge.getValue() || 0
 
-    return {
-      fields,
-      measurement,
-      tags: this.buildTags(ctx ? ctx.registry : null, gauge),
-      timestamp: ctx.date
-    }
+    // return {
+    //   fields,
+    //   measurement,
+    //   tags: this.buildTags(ctx ? ctx.registry : null, gauge),
+    //   timestamp: ctx.date
+    // }
+    const point = new Point(measurement)
+
+    point.timestamp(ctx.date).fields = fields
+    Object.entries(
+      this.buildTags(ctx ? ctx.registry : null, gauge)
+    ).forEach(([k, v]) => point.tag(k, v))
+
+    return point
   }
 
   /**
-   * Builds an IPoint instance for the given {@link Histogram}.
+   * Builds a Point instance for the given {@link Histogram}.
    *
    * @protected
    * @param {Histogram} histogram
    * @param {MetricSetReportContext<Histogram>} ctx
-   * @returns {IPoint}
+   * @returns {Point}
    * @memberof InfluxMetricReporter
    */
-  protected reportHistogram (histogram: Histogram, ctx: MetricSetReportContext<Histogram>): IPoint {
+  protected reportHistogram(
+    histogram: Histogram,
+    ctx: MetricSetReportContext<Histogram>
+  ): Point {
     const value = histogram.getCount()
     if (!value || isNaN(value)) {
       return null
@@ -352,31 +395,52 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
     fields[`${fieldNamePrefix}mean`] = this.getNumber(snapshot.getMean())
     fields[`${fieldNamePrefix}min`] = this.getNumber(snapshot.getMin())
     fields[`${fieldNamePrefix}p50`] = this.getNumber(snapshot.getMedian())
-    fields[`${fieldNamePrefix}p75`] = this.getNumber(snapshot.get75thPercentile())
-    fields[`${fieldNamePrefix}p95`] = this.getNumber(snapshot.get95thPercentile())
-    fields[`${fieldNamePrefix}p98`] = this.getNumber(snapshot.get98thPercentile())
-    fields[`${fieldNamePrefix}p99`] = this.getNumber(snapshot.get99thPercentile())
-    fields[`${fieldNamePrefix}p999`] = this.getNumber(snapshot.get999thPercentile())
+    fields[`${fieldNamePrefix}p75`] = this.getNumber(
+      snapshot.get75thPercentile()
+    )
+    fields[`${fieldNamePrefix}p95`] = this.getNumber(
+      snapshot.get95thPercentile()
+    )
+    fields[`${fieldNamePrefix}p98`] = this.getNumber(
+      snapshot.get98thPercentile()
+    )
+    fields[`${fieldNamePrefix}p99`] = this.getNumber(
+      snapshot.get99thPercentile()
+    )
+    fields[`${fieldNamePrefix}p999`] = this.getNumber(
+      snapshot.get999thPercentile()
+    )
     fields[`${fieldNamePrefix}stddev`] = this.getNumber(snapshot.getStdDev())
 
-    return {
-      fields,
-      measurement,
-      tags: this.buildTags(ctx.registry, histogram),
-      timestamp: ctx.date
-    }
+    const point = new Point(measurement)
+
+    point.timestamp(ctx.date).fields = fields
+    Object.entries(this.buildTags(ctx.registry, histogram)).forEach(([k, v]) =>
+      point.tag(k, v)
+    )
+
+    return point
+    // return {
+    //   fields,
+    //   measurement,
+    //   tags: this.buildTags(ctx.registry, histogram),
+    //   timestamp: ctx.date
+    // }
   }
 
   /**
-   * Builds an IPoint instance for the given {@link Meter}.
+   * Builds a Point instance for the given {@link Meter}.
    *
    * @protected
    * @param {Meter} meter
    * @param {MetricSetReportContext<Meter>} ctx
-   * @returns {IPoint}
+   * @returns {Point}
    * @memberof InfluxMetricReporter
    */
-  protected reportMeter (meter: Meter, ctx: MetricSetReportContext<Meter>): IPoint {
+  protected reportMeter(
+    meter: Meter,
+    ctx: MetricSetReportContext<Meter>
+  ): Point {
     const value = meter.getCount()
     if (!value || isNaN(value)) {
       return null
@@ -386,29 +450,42 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
     const measurement = this.getMeasurementName(meter)
 
     fields[`${fieldNamePrefix}count`] = meter.getCount() || 0
-    fields[`${fieldNamePrefix}m15_rate`] = this.getNumber(meter.get15MinuteRate())
+    fields[`${fieldNamePrefix}m15_rate`] = this.getNumber(
+      meter.get15MinuteRate()
+    )
     fields[`${fieldNamePrefix}m1_rate`] = this.getNumber(meter.get1MinuteRate())
     fields[`${fieldNamePrefix}m5_rate`] = this.getNumber(meter.get5MinuteRate())
     fields[`${fieldNamePrefix}mean_rate`] = this.getNumber(meter.getMeanRate())
 
-    return {
-      fields,
-      measurement,
-      tags: this.buildTags(ctx.registry, meter),
-      timestamp: ctx.date
-    }
+    const point = new Point(measurement)
+
+    point.timestamp(ctx.date).fields = fields
+    Object.entries(this.buildTags(ctx.registry, meter)).forEach(([k, v]) =>
+      point.tag(k, v)
+    )
+    // point..tag
+    //   fields,
+    //   measurement,
+    //   tags: this.buildTags(ctx.registry, meter),
+    //   timestamp: ctx.date
+    // }
+
+    return point
   }
 
   /**
-   * Builds an IPoint instance for the given {@link Timer}.
+   * Builds a Point instance for the given {@link Timer}.
    *
    * @protected
    * @param {Timer} timer
    * @param {MetricSetReportContext<Timer>} ctx
-   * @returns {IPoint}
+   * @returns {Point}
    * @memberof InfluxMetricReporter
    */
-  protected reportTimer (timer: Timer, ctx: MetricSetReportContext<Timer>): IPoint {
+  protected reportTimer(
+    timer: Timer,
+    ctx: MetricSetReportContext<Timer>
+  ): Point {
     const value = timer.getCount()
     if (!value || isNaN(value)) {
       return null
@@ -419,7 +496,9 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
     const measurement = this.getMeasurementName(timer)
 
     fields[`${fieldNamePrefix}count`] = timer.getCount() || 0
-    fields[`${fieldNamePrefix}m15_rate`] = this.getNumber(timer.get15MinuteRate())
+    fields[`${fieldNamePrefix}m15_rate`] = this.getNumber(
+      timer.get15MinuteRate()
+    )
     fields[`${fieldNamePrefix}m1_rate`] = this.getNumber(timer.get1MinuteRate())
     fields[`${fieldNamePrefix}m5_rate`] = this.getNumber(timer.get5MinuteRate())
     fields[`${fieldNamePrefix}max`] = this.getNumber(snapshot.getMax())
@@ -427,19 +506,37 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
     fields[`${fieldNamePrefix}mean_rate`] = this.getNumber(timer.getMeanRate())
     fields[`${fieldNamePrefix}min`] = this.getNumber(snapshot.getMin())
     fields[`${fieldNamePrefix}p50`] = this.getNumber(snapshot.getMedian())
-    fields[`${fieldNamePrefix}p75`] = this.getNumber(snapshot.get75thPercentile())
-    fields[`${fieldNamePrefix}p95`] = this.getNumber(snapshot.get95thPercentile())
-    fields[`${fieldNamePrefix}p98`] = this.getNumber(snapshot.get98thPercentile())
-    fields[`${fieldNamePrefix}p99`] = this.getNumber(snapshot.get99thPercentile())
-    fields[`${fieldNamePrefix}p999`] = this.getNumber(snapshot.get999thPercentile())
+    fields[`${fieldNamePrefix}p75`] = this.getNumber(
+      snapshot.get75thPercentile()
+    )
+    fields[`${fieldNamePrefix}p95`] = this.getNumber(
+      snapshot.get95thPercentile()
+    )
+    fields[`${fieldNamePrefix}p98`] = this.getNumber(
+      snapshot.get98thPercentile()
+    )
+    fields[`${fieldNamePrefix}p99`] = this.getNumber(
+      snapshot.get99thPercentile()
+    )
+    fields[`${fieldNamePrefix}p999`] = this.getNumber(
+      snapshot.get999thPercentile()
+    )
     fields[`${fieldNamePrefix}stddev`] = this.getNumber(snapshot.getStdDev())
 
-    return {
-      fields,
-      measurement,
-      tags: this.buildTags(ctx.registry, timer),
-      timestamp: ctx.date
-    }
+    // return {
+    //   fields,
+    //   measurement,
+    //   tags: this.buildTags(ctx.registry, timer),
+    //   timestamp: ctx.date
+    // }
+    const point = new Point(measurement)
+
+    point.timestamp(ctx.date).fields = fields
+    Object.entries(this.buildTags(ctx.registry, timer)).forEach(([k, v]) =>
+      point.tag(k, v)
+    )
+
+    return point
   }
 
   /**
@@ -450,11 +547,11 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @returns {string}
    * @memberof InfluxMetricReporter
    */
-  private getFieldNamePrefix (metric: Metric): string {
+  private getFieldNamePrefix(metric: Metric): string {
     if (metric.getGroup()) {
       return `${metric.getName()}.`
     }
-    return ''
+    return ""
   }
 
   /**
@@ -465,7 +562,7 @@ export class InfluxMetricReporter extends ScheduledMetricReporter<InfluxMetricRe
    * @returns {string}
    * @memberof InfluxMetricReporter
    */
-  private getMeasurementName (metric: Metric): string {
+  private getMeasurementName(metric: Metric): string {
     if (metric.getGroup()) {
       return metric.getGroup()
     }

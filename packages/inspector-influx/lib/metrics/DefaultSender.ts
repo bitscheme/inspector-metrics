@@ -1,7 +1,16 @@
-import 'source-map-support/register'
-
-import { IClusterConfig, InfluxDB, IPoint, TimePrecision } from 'influx'
-import { Sender } from './InfluxMetricReporter'
+import "source-map-support/register"
+import {
+  InfluxDB,
+  ClientOptions,
+  Point,
+  WritePrecisionType,
+} from "@influxdata/influxdb-client"
+import {
+  BucketsAPI,
+  OrgsAPI,
+  RetentionRules,
+} from "@influxdata/influxdb-client-apis"
+import { Sender } from "./InfluxMetricReporter"
 
 /**
  * Default implementation for an influxdb sender.
@@ -12,21 +21,37 @@ import { Sender } from './InfluxMetricReporter'
  */
 export class DefaultSender implements Sender {
   /**
-   * The influxdb client instance.
+   * The InfluxDB client instance.
    *
    * @private
    * @type {InfluxDB}
    * @memberof DefaultSender
    */
-  private readonly db: InfluxDB;
+  private readonly db: InfluxDB
   /**
-   * Influx client configuration object.
+   * The InfluxDB bucket name
    *
    * @private
-   * @type {IClusterConfig}
+   * @type {string}
    * @memberof DefaultSender
    */
-  private readonly config: IClusterConfig;
+  private readonly bucket: string
+  /**
+   * The InfluxDB org name
+   * 
+   * @private
+   * @type {string}
+   * @memberof DefaultSender
+   */
+  private readonly org: string
+  /**
+   * The InfluxDB retention rules (optional)
+   * 
+   * @private
+   * @type {RetentionRules}
+   * @memberof DefaultSender
+   */
+  private readonly retentionRules?: RetentionRules
   /**
    * Indicates if he sender is ready to report metrics.
    *
@@ -34,42 +59,69 @@ export class DefaultSender implements Sender {
    * @type {boolean}
    * @memberof DefaultSender
    */
-  private ready: boolean = false;
+  private ready: boolean = false
   /**
    * Defines the precision for the write operations.
    *
    * @private
-   * @type {TimePrecision}
+   * @type {WritePrecisionType}
    * @memberof DefaultSender
    */
-  private readonly precision: TimePrecision;
+  private readonly precision: WritePrecisionType
 
   /**
    * Creates an instance of DefaultSender.
    *
-   * @param {IClusterConfig} config
-   * @param {TimePrecision} [precision="s"] will be passed to write-options
+   * @param {ClientOptions} clientOptions
+   * @param {string} org The organization name
+   * @param {string} bucket The bucket name
+   * @param {RetentionRules} [retentionRules] The retention rules
+   * @param {WritePrecisionType} [precision="s"] will be passed to write-options
    * @memberof DefaultSender
    */
-  public constructor (config: IClusterConfig, precision: TimePrecision = 's') {
-    this.config = config
+  public constructor(
+    clientOptions: ClientOptions,
+    org: string,
+    bucket: string,
+    retentionRules?: RetentionRules,
+    precision: WritePrecisionType = "s"
+  ) {
+    this.org = org
+    this.bucket = bucket
+    this.retentionRules = retentionRules
     this.precision = precision
-    this.db = new InfluxDB(config)
+    this.db = new InfluxDB(clientOptions)
   }
 
   /**
-   * Ensures that a database is existing before sending data.
+   * Ensures that a bucket exists before sending data.
    *
    * @memberof DefaultSender
    */
-  public async init (): Promise<any> {
-    const database = this.config.database
-    const databases = await this.db.getDatabaseNames()
-    if ((databases instanceof String && databases.localeCompare(database) !== 0) ||
-      (databases instanceof Array &&
-        !databases.find((value: string, index: number, arr: string[]) =>
-          value.localeCompare(database) === 0))) {
-      await this.db.createDatabase(database)
+  public async init(): Promise<any> {
+    const orgsAPI = new OrgsAPI(this.db)
+    const {
+      orgs: [org],
+    } = await orgsAPI.getOrgs({
+      org: this.org,
+    })
+
+    const bucketsAPI = new BucketsAPI(this.db)
+    const {
+      buckets: [bucket],
+    } = await bucketsAPI.getBuckets({
+      orgID: org.id,
+      name: this.bucket,
+    })
+
+    if (!bucket) {
+      await bucketsAPI.postBuckets({
+        body: {
+          retentionRules: this.retentionRules,
+          orgID: org.id,
+          name: this.bucket,
+        },
+      })
     }
     this.ready = true
   }
@@ -80,17 +132,20 @@ export class DefaultSender implements Sender {
    * @returns {Promise<boolean>}
    * @memberof DefaultSender
    */
-  public async isReady (): Promise<boolean> {
+  public async isReady(): Promise<boolean> {
     return this.ready
   }
 
   /**
    * Sends the specified data points to the DB.
    *
-   * @param {IPoint[]} points
+   * @param {Point[]} points
+   * @returns {Promise<void>}
    * @memberof DefaultSender
    */
-  public async send (points: IPoint[]): Promise<void> {
-    await this.db.writePoints(points, { precision: this.precision })
+  public async send(points: Point[]): Promise<void> {
+    return this.db
+      .getWriteApi(this.org, this.bucket, this.precision)
+      .writePoints(points)
   }
 }
